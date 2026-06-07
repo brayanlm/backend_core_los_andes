@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venv/Scripts/python.exe -c ' *)",
+      "Bash(powershell -NoProfile -Command 'Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '\\\\''127.*'\\\\'' -and $_.IPAddress -notlike '\\\\''169.*'\\\\'' } | Select-Object IPAddress, InterfaceAlias | Format-Table -AutoSize; Write-Host '\\\\''--- Puerto 8003 escuchando? ---'\\\\''; \\(Get-NetTCPConnection -LocalPort 8003 -State Listen -ErrorAction SilentlyContinue | Measure-Object\\).Count')",
+      "Bash(netsh advfirewall *)",
+      "Bash(/c/Windows/System32/netsh.exe advfirewall *)",
+      "Read(//d/GuillEdu/**)"
+    ]
+  }
+}
