@@ -1,0 +1,332 @@
+@startuml用例图
+' ============================================================
+' Diagrama de Casos de Uso
+' ============================================================
+left header
+  <b>Banco de los Andes</b>
+  Core Mobile — Casos de Uso
+end header
+
+actor "Oficial de Crédito" as of
+actor "Supervisor" as sup
+actor "Administrador" as adm
+actor "Cliente" as cli
+
+rectangle "App Fuerza de Ventas" {
+  of --> (Gestionar Cartera)
+  of --> (Consultar Ficha)
+  of --> (Pre-evaluar)
+  of --> (Consultar Buró)
+  of --> (Registrar Solicitud)
+  of --> (Sincronizar Offline)
+}
+
+rectangle "Portal Back Office" {
+  sup --> (Aprobar Solicitudes)
+  sup --> (Ver Reportes)
+  adm --> (Gestionar Usuarios)
+  adm --> (Ver Estadísticas)
+}
+
+rectangle "App Clientes" {
+  cli --> (Ver Saldos)
+  cli --> (Ver Créditos)
+  cli --> (Ver Cronograma)
+  cli --> (Ver Movimientos)
+  cli --> (Ver Tarjetas)
+  cli --> (Ver Notificaciones)
+  cli --> (Realizar Transferencia)
+  cli --> (Realizar Pago)
+}
+
+@enduml
+
+@startuml类图
+' ============================================================
+' Diagrama de Clases — bd_core_mobile
+' ============================================================
+left header
+  <b>Banco de los Andes</b>
+  Core Mobile — Modelo de Datos
+end header
+
+class cr_cliente {
+  + id: TEXT (PK)
+  + numero_documento: TEXT (UNIQUE)
+  + nombres: TEXT
+  + apellidos: TEXT
+  + telefono: TEXT
+  + direccion: TEXT
+  + email: TEXT
+  + tipo_negocio: TEXT
+  + nombre_negocio: TEXT
+  + antiguedad_negocio_meses: INT
+  + calificacion_sbs: TEXT
+  + lat: REAL
+  + lng: REAL
+  + es_prospecto: INT
+}
+
+class cr_credito {
+  + id: TEXT (PK)
+  + solicitud_id: TEXT (FK)
+  + cliente_id: TEXT (FK)
+  + asesor_id: TEXT (FK)
+  + monto: REAL
+  + plazo_meses: INT
+  + tasa: REAL
+  + estado: TEXT
+  + dias_mora: INT
+  + cuotas_total: INT
+  + cuotas_pagadas: INT
+}
+
+class cr_solicitud_credito {
+  + id: TEXT (PK)
+  + numero_expediente: TEXT (UNIQUE)
+  + asesor_id: TEXT (FK)
+  + cliente_id: TEXT (FK)
+  + monto: REAL
+  + plazo: INT
+  + estado: TEXT
+}
+
+class cr_cronograma_pago {
+  + id: TEXT (PK)
+  + credito_id: TEXT (FK)
+  + nro_cuota: INT
+  + fecha_vencimiento: TEXT
+  + monto_cuota: REAL
+  + monto_capital: REAL
+  + monto_interes: REAL
+  + saldo: REAL
+  + estado_cuota: TEXT
+}
+
+class cr_cuenta_ahorro {
+  + id: TEXT (PK)
+  + cliente_id: TEXT (FK)
+  + cod_cuenta_ahorro: TEXT
+  + saldo_capital: REAL
+  + tea: REAL
+}
+
+class cr_movimiento {
+  + id: TEXT (PK)
+  + cliente_id: TEXT (FK)
+  + tipo: TEXT
+  + monto: REAL
+  + fecha_operacion: TEXT
+}
+
+class cr_tarjeta {
+  + id: TEXT (PK)
+  + cliente_id: TEXT (FK)
+  + linea_credito: REAL
+  + saldo_utilizado: REAL
+}
+
+class cr_sync_outbox {
+  + id: TEXT (PK)
+  + entidad: TEXT
+  + operacion: TEXT
+  + datos: TEXT (JSON)
+  + estado: TEXT
+}
+
+class cr_sync_log {
+  + id: TEXT (PK)
+  + tipo: TEXT
+  + entidad: TEXT
+  + registros: INT
+  + resultado: TEXT
+}
+
+class dcliente {
+  + cod_cliente: TEXT (PK)
+  + numero_documento: TEXT
+  + nombres: TEXT
+  + apellidos: TEXT
+  + deuda_total: REAL
+  + calificacion_sbs: TEXT
+}
+
+class dsolicitud {
+  + cod_solicitud: TEXT (PK)
+  + cod_cliente: TEXT (FK)
+  + monto_solicitado: REAL
+  + plazo_solicitado: INT
+  + estado: TEXT
+}
+
+cr_cliente "1" -- "0..*" cr_credito
+cr_cliente "1" -- "0..*" cr_solicitud_credito
+cr_cliente "1" -- "0..*" cr_cuenta_ahorro
+cr_cliente "1" -- "0..*" cr_movimiento
+cr_cliente "1" -- "0..*" cr_tarjeta
+cr_solicitud_credito "1" -- "0..1" cr_credito
+cr_credito "1" -- "0..*" cr_cronograma_pago
+dcliente "1" -- "0..*" dsolicitud
+
+note top of cr_sync_outbox
+  Cola de sincronización:
+  INSERT / UPDATE / DELETE
+  → pendiente → procesado
+end note
+
+note top of dcliente
+  Espejo del núcleo
+  financiero
+  (bd_core_financiero)
+end note
+
+@enduml
+
+@startuml secuencia
+' ============================================================
+' Diagrama de Secuencia — Flujo de Solicitud
+' ============================================================
+left header
+  <b>Banco de los Andes</b>
+  Flujo: Solicitud → Aprobación → Visualización
+end header
+
+actor "Oficial" as of
+participant "App FVentas" as fv
+database "SQLite\nbd_core_mobile" as sqlite
+participant "Backend\nCore Mobile" as api
+database "Firestore" as fs
+database "SQLite\nbd_core_mobile\n(espejo)" as mirror
+participant "App Clientes" as app
+actor "Cliente" as cli
+
+== 1. Originación en Campo ==
+of -> fv: Registra solicitud
+fv -> sqlite: Guarda en cr_solicitud_credito
+fv -> sqlite: Inserta sync_outbox (PENDIENTE)
+fv -> fv: Muestra confirmación offline
+
+note right: Si hay conexión...
+
+fv -> api: POST /solicitudes
+api -> fs: Crea en solicitudes_credito
+api -> sqlite: Actualiza sync_outbox → PROCESADO
+api --> fv: 201 Created
+
+== 2. Aprobación en Portal ==
+actor "Admin" as adm
+participant "Portal React" as portal
+adm -> portal: Aprueba solicitud
+portal -> api: PUT /solicitudes/{id}/aprobar
+api -> fs: Crea crédito + cronograma
+api -> fs: Notifica al cliente
+api -> sqlite: Actualiza estado APROBADO
+api --> portal: crédito creado
+
+api -> api: promover_solicitud()
+api -> sqlite: Insert en dcliente
+api -> sqlite: Insert en dsolicitud
+note right: Puente al núcleo financiero
+
+== 3. Visualización en App Cliente ==
+cli -> app: Abre app
+app -> fs: Lee créditos del cliente
+app --> cli: Muestra crédito APROBADO
+app --> cli: Muestra cronograma de pagos
+
+@enduml
+
+@startuml componentes
+' ============================================================
+' Diagrama de Componentes
+' ============================================================
+left header
+  <b>Banco de los Andes</b>
+  Arquitectura de Componentes
+end header
+
+package "App Fuerza de Ventas" {
+  [Presenter Layer] as fv_presenter
+  [Domain Layer] as fv_domain
+  [Data Layer] as fv_data
+  fv_presenter --> fv_domain
+  fv_domain --> fv_data
+}
+
+package "App Clientes" {
+  [Presenter Layer] as cl_presenter
+  [Domain Layer] as cl_domain
+  [Data Layer] as cl_data
+  cl_presenter --> cl_domain
+  cl_domain --> cl_data
+}
+
+package "Backend Core Mobile" {
+  [Routes Layer] as routes
+  [Controllers] as ctrl
+  [Services] as svc
+  [Repositories] as repos
+  [Firebase Auth] as auth
+  routes --> ctrl
+  ctrl --> svc
+  svc --> repos
+}
+
+database "Firebase\nApp Check" as appcheck
+database "Firebase Auth" as fbauth
+database "Firestore" as fs
+
+database "SQLite\nbd_core_mobile" as sqlite_backend
+database "SQLite\nbd_core_mobile\n(offline)" as sqlite_fv
+
+fv_data --> sqlite_fv: offline-first
+cl_data --> fs: online directo
+repos --> fs: CRUD Firestore
+repos --> sqlite_backend: espejo cr_*
+
+package "Portal React" {
+  [Components]
+  [Services]
+  [Pages]
+}
+
+routes <--> portal: REST API
+fv_data <--> routes: REST API
+
+svc --> fbauth: Firebase Auth
+svc --> appcheck: Firebase App Check
+
+@enduml
+
+@startuml estados
+' ============================================================
+' Diagrama de Estados — Solicitud de Crédito
+' ============================================================
+left header
+  <b>Banco de los Andes</b>
+  Estados de una Solicitud de Crédito
+end header
+
+[*] --> BORRADOR: Creada en app
+BORRADOR --> ENVIADO: Asesor envía
+ENVIADO --> PENDIENTE: Llega al backend
+PENDIENTE --> APROBADO: Admin aprueba
+PENDIENTE --> RECHAZADO: Admin rechaza
+APROBADO --> DESEMBOLSADO: Desembolso realizado
+APROBADO --> RECHAZADO: Reversión
+DESEMBOLSADO --> PAGADO: Cliente paga todo
+RECHAZADO --> [*]
+PAGADO --> [*]
+
+note top of PENDIENTE
+  Visible en Portal React
+  para aprobación/rechazo
+end note
+
+note right of APROBADO
+  Se promueve al núcleo
+  financiero (dcliente/
+  dsolicitud)
+end note
+
+@enduml

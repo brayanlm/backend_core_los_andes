@@ -10,13 +10,14 @@ from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.core.cfg_database import SessionLocal
+from app.core.cfg_database import SessionLocal, init_db
 from app.core.cfg_security import hash_password
 from app.models.mdl_asesores import Agencia, Asesor
 from app.models.mdl_clientes import Cliente
 from app.models.mdl_cartera import CarteraDiaria
 
 def run():
+    init_db()
     db = SessionLocal()
     try:
         if db.query(Asesor).filter(Asesor.codigo_empleado == "0001").first():

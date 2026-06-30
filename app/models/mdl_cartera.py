@@ -1,15 +1,14 @@
 import uuid
 from sqlalchemy import Column, String, Integer, Numeric, Date, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
 from app.core.cfg_database import Base
 
 class CarteraDiaria(Base):
     __tablename__ = "cartera_diaria"
 
-    id                 = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    asesor_id          = Column(UUID(as_uuid=True), ForeignKey("asesores.id"), nullable=False)
-    cliente_id         = Column(UUID(as_uuid=True), ForeignKey("clientes.id"), nullable=False)
-    agencia_id         = Column(UUID(as_uuid=True), ForeignKey("agencias.id"))
+    id                 = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    asesor_id          = Column(String(36), ForeignKey("asesores.id"), nullable=False)
+    cliente_id         = Column(String(36), ForeignKey("clientes.id"), nullable=False)
+    agencia_id         = Column(String(36), ForeignKey("agencias.id"))
     fecha_asignacion   = Column(Date, nullable=False)
     tipo_gestion       = Column(String(30), nullable=False)
     prioridad          = Column(String(10), default="normal")

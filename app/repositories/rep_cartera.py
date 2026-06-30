@@ -1,52 +1,49 @@
-from datetime import datetime, timezone, date
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from app.models.mdl_cartera import CarteraDiaria
-from app.models.mdl_clientes import Cliente
+from datetime import datetime, timezone
 
-def listar_por_asesor(db: Session, asesor_id: str, fecha: date) -> list[dict]:
-    """Cartera del asesor para una fecha, ordenada por score (RF-09)."""
-    filas = (
-        db.query(CarteraDiaria, Cliente)
-        .join(Cliente, Cliente.id == CarteraDiaria.cliente_id)
-        .filter(
-            CarteraDiaria.asesor_id == asesor_id,
-            CarteraDiaria.fecha_asignacion == fecha,
-        )
-        .order_by(desc(CarteraDiaria.score_prioridad))
-        .all()
-    )
-    return [
-        {
-            "id": str(c.id),
-            "cliente_id": str(c.cliente_id),
-            "cliente_nombre": f"{cli.nombres} {cli.apellidos}",
-            "documento": cli.numero_documento,
-            "tipo_gestion": c.tipo_gestion,
-            "prioridad": c.prioridad,
-            "score_prioridad": c.score_prioridad or 0,
-            "monto_credito": float(c.monto_credito or 0),
-            "estado_visita": c.estado_visita,
-            "orden_manual": c.orden_manual,
-            "lat": float(cli.lat) if cli.lat is not None else None,
-            "lng": float(cli.lng) if cli.lng is not None else None,
-        }
-        for c, cli in filas
-    ]
 
-def marcar_visita(db: Session, asesor_id: str, cartera_id: str, data: dict) -> bool:
-    fila = (
-        db.query(CarteraDiaria)
-        .filter(CarteraDiaria.id == cartera_id, CarteraDiaria.asesor_id == asesor_id)
-        .first()
+def listar_por_asesor(db, asesor_id: str, fecha) -> list[dict]:
+    fecha_str = fecha.isoformat() if hasattr(fecha, "isoformat") else str(fecha)
+    docs = (
+        db.collection("cartera_diaria")
+        .where("asesor_id", "==", asesor_id)
+        .where("fecha_asignacion", "==", fecha_str)
+        .stream()
     )
-    if not fila:
+    result = []
+    for d in docs:
+        c = d.to_dict()
+        cli_doc = db.collection("clientes").document(c.get("cliente_id", "")).get()
+        cli = cli_doc.to_dict() if cli_doc.exists else {}
+        result.append({
+            "id": d.id,
+            "cliente_id": c.get("cliente_id", ""),
+            "cliente_nombre": f"{cli.get('nombres', '')} {cli.get('apellidos', '')}",
+            "documento": cli.get("numero_documento", ""),
+            "tipo_gestion": c.get("tipo_gestion", ""),
+            "prioridad": c.get("prioridad", "normal"),
+            "score_prioridad": c.get("score_prioridad", 0),
+            "monto_credito": float(c.get("monto_credito", 0) or 0),
+            "estado_visita": c.get("estado_visita", "pendiente"),
+            "orden_manual": c.get("orden_manual"),
+            "lat": c.get("lat"),
+            "lng": c.get("lng"),
+        })
+    result.sort(key=lambda x: x["score_prioridad"], reverse=True)
+    return result
+
+
+def marcar_visita(db, asesor_id: str, cartera_id: str, data: dict) -> bool:
+    doc_ref = db.collection("cartera_diaria").document(cartera_id)
+    doc = doc_ref.get()
+    if not doc.exists or doc.to_dict().get("asesor_id") != asesor_id:
         return False
-    fila.estado_visita = "visitado" if data["resultado"] == "visitado" else data["resultado"]
-    fila.resultado_visita = data["resultado"]
-    fila.observacion_visita = data.get("observacion", "")
-    fila.timestamp_visita = datetime.now(timezone.utc)
-    fila.lat_visita = data.get("lat")
-    fila.lng_visita = data.get("lng")
-    db.commit()
+    estado = "visitado" if data["resultado"] == "visitado" else data["resultado"]
+    doc_ref.update({
+        "estado_visita": estado,
+        "resultado_visita": data["resultado"],
+        "observacion_visita": data.get("observacion", ""),
+        "timestamp_visita": datetime.now(timezone.utc).isoformat(),
+        "lat_visita": data.get("lat"),
+        "lng_visita": data.get("lng"),
+    })
     return True

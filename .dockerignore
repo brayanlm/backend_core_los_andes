@@ -1,0 +1,15 @@
+.venv
+.git
+__pycache__
+*.pyc
+.env
+service-account.json
+data
+Backend
+scripts
+sql
+docs
+*.log
+*.bat
+*.ps1
+README.md

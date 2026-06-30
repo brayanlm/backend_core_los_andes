@@ -1,0 +1,24 @@
+-- ============================================================
+-- Seed Data — bd_core_mobile
+-- Proyecto: Core Mobile Banco de los Andes
+-- ============================================================
+-- Los datos demo se generan programáticamente vía
+-- app/database/seed.py.
+--
+-- Datos incluidos:
+--   • 7 actividades económicas (cr_actividad_economica)
+--   • 5 tipos de garantía (cr_garantia)
+--   • 4 asesores (admin + 3 fuerza de ventas)
+--   • 5 clientes con diferentes perfiles de riesgo
+--   • Cuentas de ahorro, tarjetas para cada cliente
+--   • 6 créditos con mora variada (semáforo)
+--     - Verde  (≤5 días): 2 créditos
+--     - Amarillo (≤30 días): 1 crédito
+--     - Rojo (>30 días): 1 crédito
+--     - Pagado: 1 crédito
+--   • Cronograma de pagos completo para cada crédito
+--   • Movimientos recientes (3 por cliente)
+--   • Notificaciones de recordatorio
+--   • Ofertas pre-aprobadas
+--   • Cartera diaria para cada asesor
+-- ============================================================

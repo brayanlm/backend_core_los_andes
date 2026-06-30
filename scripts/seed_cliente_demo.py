@@ -64,7 +64,7 @@ def run():
         db.add(CrCuentaAhorro(
             cod_cuenta_ahorro=COD_AHORRO,
             cliente_id=cliente.id,
-            tipo_cuenta="Cuenta Independencia Andino",
+            tipo_cuenta="Cuenta Independencia Los Andes",
             moneda="PEN",
             saldo_capital=24.64,
             saldo_interes=0.10,

@@ -1,0 +1,15 @@
+-- ============================================================
+-- bd_core_mobile — Esquema Completo
+-- Proyecto: Core Mobile Banco de los Andes
+-- Versión: 1.0.0
+-- ============================================================
+-- Este archivo es una copia del DDL embebido en
+-- app/database/ddl_core.sql para referencia/documentación.
+-- ============================================================
+
+-- Ver DDL completo en: app/database/ddl_core.sql
+-- Incluye:
+--   • 21 tablas cr_* (espejo del núcleo)
+--   • 2 tablas dcliente / dsolicitud (puente al bd_core_financiero)
+--   • cr_sync_outbox / cr_sync_log (infraestructura de sincronización)
+--   • Índices y relaciones con integridad referencial

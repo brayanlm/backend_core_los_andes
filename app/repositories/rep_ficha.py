@@ -1,97 +1,107 @@
 from datetime import date
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.models.mdl_all import Cliente, Credito, CreditoPreaprobado
 
-def actualizar_ubicacion(
-    db: Session,
-    cliente_id: str,
-    lat: float,
-    lng: float,
-    direccion: str | None = None,
-) -> bool:
-    """Actualiza las coordenadas del negocio del cliente (HU-10 / RF-25/26)."""
-    res = db.execute(
-        text(
-            """
-            UPDATE clientes
-               SET lat = :lat,
-                   lng = :lng,
-                   direccion = COALESCE(:direccion, direccion),
-                   updated_at = now()
-             WHERE id = :id
-            """
-        ),
-        {"id": cliente_id, "lat": lat, "lng": lng, "direccion": direccion},
-    )
+
+def _cliente_to_dict(c: Cliente) -> dict:
+    return {
+        "id": c.id,
+        "numero_documento": c.numero_documento,
+        "nombres": c.nombres,
+        "apellidos": c.apellidos,
+        "telefono": c.telefono,
+        "direccion": c.direccion,
+        "email": c.email,
+        "tipo_negocio": c.tipo_negocio,
+        "nombre_negocio": c.nombre_negocio,
+        "antiguedad_negocio_meses": c.antiguedad_negocio_meses,
+        "calificacion_sbs": c.calificacion_sbs or "NORMAL",
+        "ingreso_mensual": 0,
+        "fecha_creacion": c.created_at,
+    }
+
+
+def listar_todos(db: Session) -> list[dict]:
+    clientes = db.query(Cliente).order_by(Cliente.apellidos, Cliente.nombres).all()
+    return [_cliente_to_dict(c) for c in clientes]
+
+
+def obtener_por_id(db: Session, cliente_id: str) -> dict | None:
+    c = db.query(Cliente).filter(Cliente.id == cliente_id).first()
+    if not c:
+        return None
+    return _cliente_to_dict(c)
+
+
+def actualizar_ubicacion(db: Session, cliente_id: str, lat: float, lng: float, direccion: str | None = None) -> bool:
+    c = db.query(Cliente).filter(Cliente.id == cliente_id).first()
+    if not c:
+        return False
+    c.lat = lat
+    c.lng = lng
+    if direccion:
+        c.direccion = direccion
     db.commit()
-    return res.rowcount > 0
+    return True
 
 
 def obtener_ficha(db: Session, cliente_id: str) -> dict | None:
-    """Ficha completa del cliente (RF-27/30/33): datos, posicion, historial, oferta."""
-    cli = db.execute(
-        text("SELECT * FROM clientes WHERE id = :id"), {"id": cliente_id}
-    ).mappings().first()
-    if cli is None:
+    cli = db.query(Cliente).filter(Cliente.id == cliente_id).first()
+    if not cli:
         return None
 
-    # Posicion en el sistema (agregado de cr_creditos) — RF-30
-    pos = db.execute(
-        text(
-            """
-            SELECT
-                COALESCE(SUM(saldo_total), 0)                  AS deuda_total,
-                COUNT(*) FILTER (WHERE estado = 'vigente')     AS cuentas_vigentes,
-                COUNT(*) FILTER (WHERE dias_mora > 0)          AS cuentas_mora,
-                COALESCE(MAX(dias_mora), 0)                    AS dias_mayor_mora
-            FROM cr_creditos
-            WHERE cliente_id = :id
-            """
-        ),
-        {"id": cliente_id},
-    ).mappings().first()
+    creditos = (
+        db.query(Credito)
+        .filter(Credito.cliente_id == cliente_id)
+        .order_by(Credito.fecha_desembolso.desc())
+        .all()
+    )
 
-    # Historial crediticio (ultimos 5) — RF-27
-    historial = db.execute(
-        text(
-            """
-            SELECT cod_cuenta_credito, producto, monto_desembolsado,
-                   tea, estado, dias_mora, cuotas_total, cuotas_pagadas
-            FROM cr_creditos
-            WHERE cliente_id = :id
-            ORDER BY fecha_desembolso DESC NULLS LAST
-            LIMIT 5
-            """
-        ),
-        {"id": cliente_id},
-    ).mappings().all()
+    ofertas = (
+        db.query(CreditoPreaprobado)
+        .filter(
+            CreditoPreaprobado.cliente_id == cliente_id,
+            CreditoPreaprobado.vigente == 1,
+        )
+        .all()
+    )
+    hoy = date.today().isoformat()
+    oferta_valida = None
+    mejor_score = 0
+    for o in ofertas:
+        fv = o.fecha_vencimiento
+        if fv and fv < hoy:
+            continue
+        score = o.score_confianza or 0
+        if score > mejor_score:
+            mejor_score = score
+            oferta_valida = o
 
-    # Oferta preaprobada vigente (mayor score) — RF-33
-    oferta = db.execute(
-        text(
-            """
-            SELECT monto_maximo, plazo_sugerido_meses, tea_referencial,
-                   score_confianza, fecha_vencimiento
-            FROM creditos_preaprobados
-            WHERE cliente_id = :id AND vigente = TRUE
-              AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= :hoy)
-            ORDER BY score_confianza DESC
-            LIMIT 1
-            """
-        ),
-        {"id": cliente_id, "hoy": date.today()},
-    ).mappings().first()
+    dias_mayor_mora = 0
+    historial = []
+    for cr in creditos:
+        dm = cr.dias_mora or 0
+        if dm > dias_mayor_mora:
+            dias_mayor_mora = dm
+        historial.append(cr)
 
-    # Comportamiento de pagos ultimos 12 meses (RF-31): 1=puntual, 2=mora, 0=sin cuota
-    dni = cli["numero_documento"] or "0"
-    dmora = pos["dias_mayor_mora"]
+    return _build_ficha_response(cli, cliente_id, historial, oferta_valida, dias_mayor_mora)
+
+
+def _build_ficha_response(cli, cliente_id, historial, oferta, dias_mayor_mora):
+    dmora = dias_mayor_mora
+    deuda_total = sum(float(h.saldo_total or 0) for h in historial)
+    cuentas_vigentes = sum(1 for h in historial if h.estado == "vigente")
+    cuentas_mora = sum(1 for h in historial if (h.dias_mora or 0) > 0)
+
     comportamiento = [1] * 12
     if dmora > 0:
         n = 1 if dmora <= 30 else (2 if dmora <= 60 else 3)
         for k in range(n):
             comportamiento[11 - k] = 2
-    if dni[-1].isdigit() and int(dni[-1]) % 3 == 0:
+    dni = cli.numero_documento or "0"
+    if dni and dni[-1].isdigit() and int(dni[-1]) % 3 == 0:
         comportamiento[0] = 0
         comportamiento[1] = 0
 
@@ -99,9 +109,9 @@ def obtener_ficha(db: Session, cliente_id: str) -> dict | None:
     puntuales = [m for m in con_cuota if m == 1]
     pct_puntual = round(len(puntuales) / len(con_cuota) * 100, 1) if con_cuota else 0
     monto_pagado = sum(
-        float(h["monto_desembolsado"] or 0)
+        float(h.monto_desembolsado or 0)
         for h in historial
-        if h["estado"] == "pagado"
+        if h.estado == "pagado"
     )
 
     return {
@@ -112,45 +122,43 @@ def obtener_ficha(db: Session, cliente_id: str) -> dict | None:
             "monto_pagado": monto_pagado,
         },
         "cliente": {
-            "id": str(cli["id"]),
-            "numero_documento": cli["numero_documento"],
-            "nombres": cli["nombres"],
-            "apellidos": cli["apellidos"],
-            "telefono": cli["telefono"],
-            "direccion": cli["direccion"],
-            "tipo_negocio": cli["tipo_negocio"],
-            "nombre_negocio": cli["nombre_negocio"],
-            "antiguedad_negocio_meses": cli["antiguedad_negocio_meses"],
-            "calificacion_sbs": cli["calificacion_sbs"] or "NORMAL",
+            "id": cliente_id,
+            "numero_documento": cli.numero_documento,
+            "nombres": cli.nombres,
+            "apellidos": cli.apellidos,
+            "telefono": cli.telefono,
+            "direccion": cli.direccion,
+            "tipo_negocio": cli.tipo_negocio,
+            "nombre_negocio": cli.nombre_negocio,
+            "antiguedad_negocio_meses": cli.antiguedad_negocio_meses,
+            "calificacion_sbs": cli.calificacion_sbs or "NORMAL",
         },
         "posicion": {
-            "deuda_total": float(pos["deuda_total"]),
-            "cuentas_vigentes": pos["cuentas_vigentes"],
-            "cuentas_mora": pos["cuentas_mora"],
-            "dias_mayor_mora": pos["dias_mayor_mora"],
+            "deuda_total": deuda_total,
+            "cuentas_vigentes": cuentas_vigentes,
+            "cuentas_mora": cuentas_mora,
+            "dias_mayor_mora": dias_mayor_mora,
         },
         "historial": [
             {
-                "producto": h["producto"],
-                "monto_desembolsado": float(h["monto_desembolsado"] or 0),
-                "plazo_meses": h["cuotas_total"],
-                "tea": float(h["tea"] or 0),
-                "estado": h["estado"],
-                "dias_mora": h["dias_mora"] or 0,
-                "cuotas_total": h["cuotas_total"] or 0,
-                "cuotas_pagadas": h["cuotas_pagadas"] or 0,
+                "producto": h.producto,
+                "monto_desembolsado": float(h.monto_desembolsado or 0),
+                "plazo_meses": h.cuotas_total,
+                "tea": float(h.tea or 0),
+                "estado": h.estado,
+                "dias_mora": h.dias_mora or 0,
+                "cuotas_total": h.cuotas_total or 0,
+                "cuotas_pagadas": h.cuotas_pagadas or 0,
             }
             for h in historial
         ],
         "oferta": None
         if oferta is None
         else {
-            "monto_maximo": float(oferta["monto_maximo"]),
-            "plazo_sugerido_meses": oferta["plazo_sugerido_meses"],
-            "tea_referencial": float(oferta["tea_referencial"] or 0),
-            "score_confianza": oferta["score_confianza"] or 0,
-            "fecha_vencimiento": oferta["fecha_vencimiento"].isoformat()
-            if oferta["fecha_vencimiento"]
-            else None,
+            "monto_maximo": float(oferta.monto_maximo or 0),
+            "plazo_sugerido_meses": oferta.plazo_sugerido_meses,
+            "tea_referencial": float(oferta.tea_referencial or 0),
+            "score_confianza": oferta.score_confianza or 0,
+            "fecha_vencimiento": oferta.fecha_vencimiento,
         },
     }

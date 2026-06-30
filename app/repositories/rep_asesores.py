@@ -1,10 +1,21 @@
-from sqlalchemy.orm import Session
-from app.models.mdl_asesores import Asesor
+def get_by_codigo(db, codigo_empleado: str) -> dict | None:
+    docs = (
+        db.collection("asesores")
+        .where("codigo_empleado", "==", codigo_empleado)
+        .limit(1)
+        .stream()
+    )
+    for d in docs:
+        data = d.to_dict()
+        data["id"] = d.id
+        return data
+    return None
 
-def get_by_codigo(db: Session, codigo_empleado: str) -> Asesor | None:
-    return db.query(Asesor).filter(
-        Asesor.codigo_empleado == codigo_empleado
-    ).first()
 
-def get_by_id(db: Session, asesor_id: str) -> Asesor | None:
-    return db.query(Asesor).filter(Asesor.id == asesor_id).first()
+def get_by_id(db, asesor_id: str) -> dict | None:
+    doc = db.collection("asesores").document(asesor_id).get()
+    if not doc.exists:
+        return None
+    data = doc.to_dict()
+    data["id"] = doc.id
+    return data

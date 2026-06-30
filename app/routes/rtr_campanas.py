@@ -2,10 +2,9 @@ from datetime import date
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-from app.core.cfg_database import get_db
+from app.database.session import get_db
 from app.core.cfg_auth import get_current_asesor
+from app.models.mdl_all import CampanaActiva, Cliente
 
 router = APIRouter()
 
@@ -21,39 +20,38 @@ class CampanaOut(BaseModel):
 
 
 @router.get("", response_model=list[CampanaOut])
-def listar(
-    db: Session = Depends(get_db),
-    asesor: dict = Depends(get_current_asesor),
-):
-    """Campanas activas del asesor, mas proximas a vencer primero (HU-16/RF-40)."""
-    rows = db.execute(
-        text(
-            """
-            SELECT ca.id, ca.cliente_id, ca.tipo, ca.monto_ofertado,
-                   ca.fecha_vencimiento, c.nombres, c.apellidos
-            FROM campanas_activas ca
-            JOIN clientes c ON c.id = ca.cliente_id
-            WHERE ca.asesor_id = :asesor AND ca.activa = TRUE
-              AND (ca.fecha_vencimiento IS NULL OR ca.fecha_vencimiento >= :hoy)
-            ORDER BY ca.fecha_vencimiento ASC NULLS LAST
-            """
-        ),
-        {"asesor": asesor["asesor_id"], "hoy": date.today()},
-    ).mappings().all()
+def listar(db=Depends(get_db), asesor: dict = Depends(get_current_asesor)):
     hoy = date.today()
-    return [
-        CampanaOut(
-            id=str(r["id"]),
-            cliente_id=str(r["cliente_id"]),
-            cliente_nombre=f"{r['nombres']} {r['apellidos']}",
-            tipo=r["tipo"],
-            monto_ofertado=float(r["monto_ofertado"] or 0),
-            fecha_vencimiento=r["fecha_vencimiento"].isoformat()
-            if r["fecha_vencimiento"]
-            else None,
-            dias_restantes=(r["fecha_vencimiento"] - hoy).days
-            if r["fecha_vencimiento"]
-            else 0,
+    rows = (
+        db.query(CampanaActiva, Cliente)
+        .join(Cliente, CampanaActiva.cliente_id == Cliente.id)
+        .filter(
+            CampanaActiva.asesor_id == asesor["asesor_id"],
+            CampanaActiva.activa == 1,
         )
-        for r in rows
-    ]
+        .order_by(CampanaActiva.created_at.desc())
+        .all()
+    )
+    result = []
+    for ca, cli in rows:
+        fv = ca.fecha_vencimiento
+        if fv and fv < hoy.isoformat():
+            continue
+        dias_rest = 0
+        if fv:
+            try:
+                fv_date = date.fromisoformat(fv)
+                dias_rest = (fv_date - hoy).days
+            except (ValueError, TypeError):
+                pass
+        result.append(CampanaOut(
+            id=ca.id,
+            cliente_id=ca.cliente_id,
+            cliente_nombre=f"{cli.nombres} {cli.apellidos}",
+            tipo=ca.tipo,
+            monto_ofertado=float(ca.monto_ofertado or 0),
+            fecha_vencimiento=fv,
+            dias_restantes=dias_rest,
+        ))
+    result.sort(key=lambda x: x.dias_restantes if x.fecha_vencimiento else 999)
+    return result

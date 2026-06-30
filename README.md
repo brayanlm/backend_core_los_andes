@@ -1,76 +1,72 @@
-# Core Mobile — Banco Andino (FastAPI)
+# Core Mobile — Banco de los Andes (FastAPI)
 
-Capa operacional de canales moviles. La consumen la **app Flutter de fuerza de
-ventas** y la **app de clientes (appbanco_s8)**. Alimenta al nucleo
-`bd_core_financiero` via servicio de promocion (tabla `sync_outbox`).
+Backend unificado para la Banca Móvil, Fuerza de Ventas y Portal del Personal.
 
-- DB: `bd_core_mobile` (PostgreSQL) · Puerto API: **8003**
-- Stack: FastAPI · SQLAlchemy 2 · JWT (python-jose) · bcrypt (passlib)
+- DB: PostgreSQL (Neon) · Puerto API: **8010**
+- Stack: FastAPI · SQLAlchemy 2 · JWT (python-jose) · bcrypt (passlib) · Alembic
 
-## Puesta en marcha
+## Puesta en marcha (desarrollo local)
 
 ```powershell
 # 1) Entorno virtual
-python -m venv venv
-venv\Scripts\activate
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 
-# 2) Crear el esquema en la BD (ya creada en PostgreSQL)
-psql -U postgres -d bd_core_mobile -f sql/01_schema_bd_core_mobile.sql
+# 2) Variables de entorno
+copy .env.example .env
+# Editar .env: DATABASE_URL, SECRET_KEY
 
-# 3) Datos demo (asesor 0001 / clave 1234)
-python -m scripts.seed_bd_core_mobile
+# 3) Migraciones
+python -m alembic upgrade head
 
-# 4) Levantar el API (escuchando en toda la red para que el telefono lo alcance)
-uvicorn main:app --reload --host 0.0.0.0 --port 8003
+# 4) Levantar el API
+uvicorn main:app --reload --host 0.0.0.0 --port 8010
 ```
 
-Docs interactivas: http://localhost:8003/docs
+Docs interactivas: http://localhost:8010/docs
 
-### Acceso desde el telefono fisico
-- PC y telefono en la **misma red WiFi**.
-- La app Flutter apunta a `http://192.168.1.35:8003` (IP LAN de la PC; ver
-  `lib/core/network/api_client.dart`). Si tu IP cambia, actualiza ese valor.
-- Abrir el puerto 8003 en el Firewall de Windows (una sola vez, como admin):
-  ```powershell
-  netsh advfirewall firewall add rule name="FastAPI Mobile 8003" ^
-    dir=in action=allow protocol=TCP localport=8003
-  ```
+## Publicar en Render
 
-## Endpoints (slice inicial: Auth + Cartera)
+1. Conectar repositorio a Render.
+2. Servicio **Web Service** con:
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `python -m alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT`
+   - **Health Check Path:** `/health`
+3. Configurar variables de entorno (ver `render.yaml`).
+4. `DATABASE_URL` y `SECRET_KEY` se marcan como **Sync: false** (se ingresan manualmente).
 
-| Metodo | Ruta | Descripcion |
+## Variables de entorno (producción)
+
+| Variable | Descripción |
+|----------|-------------|
+| `DATABASE_URL` | Connection string PostgreSQL (Neon) |
+| `SECRET_KEY` | Clave JWT (generar con `secrets.token_urlsafe(32)`) |
+| `CORS_ORIGINS` | Orígenes permitidos separados por coma |
+| `ENV` | `production` (oculta errores internos) |
+| `ALGORITHM` | `HS256` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `480` |
+
+## Endpoints principales
+
+| Método | Ruta | Descripción |
 |--------|------|-------------|
-| POST | `/auth/login` | Login del asesor (codigo_empleado + password) -> JWT |
-| GET  | `/cartera` | Cartera del dia del asesor autenticado (Bearer token) |
+| POST | `/auth/login` | Login (email o codigo_empleado + password) -> JWT |
+| GET  | `/health` | Health check |
+| GET  | `/cartera` | Cartera del día del asesor |
 | POST | `/cartera/{id}/visita` | Registrar resultado de visita |
+| POST | `/solicitudes` | Crear solicitud de crédito |
+| GET  | `/cliente/notificaciones` | Notificaciones del cliente |
+| PUT  | `/cliente/notificaciones/{id}/leer` | Marcar notificación como leída |
 
-### Prueba rapida
+## Prueba rápida
+
 ```bash
-# login
-curl -X POST http://localhost:8003/auth/login \
+# login como asesor FV
+curl -X POST http://localhost:8010/auth/login \
   -H "Content-Type: application/json" \
-  -d "{\"codigo_empleado\":\"0001\",\"password\":\"1234\"}"
+  -d "{\"codigo_empleado\":\"0001\",\"password\":\"0001123\"}"
 
-# cartera (usar el access_token devuelto)
-curl http://localhost:8003/cartera -H "Authorization: Bearer <TOKEN>"
+# health
+curl http://localhost:8010/health
 ```
-
-## Estructura
-```
-app/
-  core/        cfg_config, cfg_database, cfg_security, cfg_auth
-  models/      mdl_asesores, mdl_clientes, mdl_cartera  (SQLAlchemy)
-  schemas/     sch_auth, sch_cartera                    (Pydantic)
-  repositories/rep_asesores, rep_cartera
-  controllers/ ctl_auth
-  routes/      rtr_auth, rtr_cartera
-sql/           01_schema_bd_core_mobile.sql
-scripts/       seed_bd_core_mobile.py
-```
-
-## Pendiente (siguientes etapas)
-- Modulos M2–M11 (solicitudes, documentos, buro, cobranza, reportes).
-- Tablas espejo `cr_*` (sync core -> mobile) y servicio de promocion `sync_outbox` -> core.
-- Endpoints para la app de clientes (cuentas, tarjetas, prestamos, movimientos).
-- Migrar la capa de datos de la app Flutter de Supabase a REST contra este API.

@@ -1,13 +1,12 @@
 import uuid
 from sqlalchemy import Column, String, Boolean, Integer, Date, Numeric, DateTime
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from app.core.cfg_database import Base
 
 class Cliente(Base):
     __tablename__ = "clientes"
 
-    id                       = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id                       = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     cod_cliente              = Column(String(20), unique=True)
     numero_documento         = Column(String(15), unique=True, nullable=False)
     tipo_documento           = Column(String(5), default="DNI")

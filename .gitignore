@@ -1,4 +1,3 @@
-@"
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -12,4 +11,10 @@ env/
 .idea/
 .vscode/
 *.sqlite3
-"@ | Out-File -Encoding utf8 .gitignore
+*.db
+service-account.json
+credentials.json
+*.key
+*.pem
+*.err
+*_result.txt

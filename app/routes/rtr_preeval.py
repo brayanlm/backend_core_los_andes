@@ -16,17 +16,15 @@ class PreEvalIn(BaseModel):
 
 
 class PreEvalOut(BaseModel):
-    calificacion: str   # APTO / REVISAR / NO_PROCEDE
+    calificacion: str
     motivo: str
     puntaje: int
 
 
 @router.post("", response_model=PreEvalOut)
-def pre_evaluar(data: PreEvalIn, asesor: dict = Depends(get_current_asesor)):
-    """Pre-evaluacion crediticia simulada (M4 / RF-38).
-
-    Regla mock por capacidad de pago: relacion monto vs. ingresos anuales.
-    En produccion esto invocaria el motor de scoring del core.
+def pre_evaluar_simple(data: PreEvalIn, asesor: dict = Depends(get_current_asesor)):
+    """Pre-evaluacion crediticia simplificada (uso standalone).
+    Para la version integrada con solicitud usar POST /evaluacion/pre-evaluar.
     """
     ingresos_anuales = max(data.ingresos_estimados, 1) * 12
     ratio = data.monto_solicitado / ingresos_anuales if ingresos_anuales else 99

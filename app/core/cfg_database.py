@@ -1,33 +1,7 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-from app.core.cfg_config import settings
+"""
+Database dependency — todas las rutas nuevas deben usar
+app.database.session.get_db() para SQLAlchemy/PostgreSQL.
 
-engine = create_engine(
-    settings.DATABASE_URL,
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
-)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base = declarative_base()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-# --- Conexion secundaria al nucleo bancario (bd_core_financiero) ---
-# Usada solo por el servicio de promocion (sync_outbox -> core).
-core_engine = create_engine(
-    settings.CORE_DATABASE_URL,
-    pool_pre_ping=True,
-    pool_size=2,
-    max_overflow=4,
-)
-
-SessionLocalCore = sessionmaker(autocommit=False, autoflush=False, bind=core_engine)
+Este módulo se mantiene solo para compatibilidad con imports legacy.
+"""
+from app.database.session import get_db, init_db, Base  # noqa: F401

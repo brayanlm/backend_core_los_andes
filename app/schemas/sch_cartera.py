@@ -14,6 +14,8 @@ class CarteraItemOut(BaseModel):
     orden_manual: Optional[int] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
+    asesor_id: Optional[str] = None
+    fecha_asignacion: Optional[str] = None
 
 class MarcarVisitaIn(BaseModel):
     resultado: str               # visitado / no_encontrado / reagendado / negocio_cerrado

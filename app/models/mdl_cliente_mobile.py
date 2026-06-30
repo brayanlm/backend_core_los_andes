@@ -9,7 +9,6 @@ import uuid
 from sqlalchemy import (
     Column, String, Boolean, Integer, Numeric, Date, DateTime, Text, ForeignKey,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from app.core.cfg_database import Base
 
@@ -17,8 +16,8 @@ from app.core.cfg_database import Base
 class UsuarioCliente(Base):
     __tablename__ = "usuarios_cliente"
 
-    id                = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    cliente_id        = Column(UUID(as_uuid=True), ForeignKey("clientes.id"), nullable=False, unique=True)
+    id                = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    cliente_id        = Column(String(36), ForeignKey("clientes.id"), nullable=False, unique=True)
     username          = Column(String(50), unique=True, nullable=False)  # = numero_documento (DNI)
     password_hash     = Column(Text, nullable=False)
     token_fcm         = Column(Text)
@@ -32,9 +31,9 @@ class UsuarioCliente(Base):
 class CrCuentaAhorro(Base):
     __tablename__ = "cr_cuentas_ahorro"
 
-    id                = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id                = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     cod_cuenta_ahorro = Column(String(30), unique=True, nullable=False)
-    cliente_id        = Column(UUID(as_uuid=True), ForeignKey("clientes.id"), nullable=False)
+    cliente_id        = Column(String(36), ForeignKey("clientes.id"), nullable=False)
     tipo_cuenta       = Column(String(40))
     moneda            = Column(String(3), default="PEN")
     saldo_capital     = Column(Numeric(12, 2))
@@ -47,9 +46,9 @@ class CrCuentaAhorro(Base):
 class CrCredito(Base):
     __tablename__ = "cr_creditos"
 
-    id                   = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id                   = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     cod_cuenta_credito   = Column(String(30), unique=True, nullable=False)
-    cliente_id           = Column(UUID(as_uuid=True), ForeignKey("clientes.id"), nullable=False)
+    cliente_id           = Column(String(36), ForeignKey("clientes.id"), nullable=False)
     producto             = Column(String(40))
     monto_desembolsado   = Column(Numeric(12, 2))
     saldo_capital        = Column(Numeric(12, 2))
@@ -67,7 +66,7 @@ class CrCredito(Base):
 class CrCronogramaPago(Base):
     __tablename__ = "cr_cronograma_pagos"
 
-    id                 = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id                 = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     cod_cuenta_credito = Column(String(30), ForeignKey("cr_creditos.cod_cuenta_credito"), nullable=False)
     nro_cuota          = Column(Integer, nullable=False)
     fecha_vencimiento  = Column(Date, nullable=False)
@@ -83,9 +82,9 @@ class CrCronogramaPago(Base):
 class CrMovimiento(Base):
     __tablename__ = "cr_movimientos"
 
-    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id              = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     cod_operacion   = Column(String(40), unique=True, nullable=False)
-    cliente_id      = Column(UUID(as_uuid=True), ForeignKey("clientes.id"), nullable=False)
+    cliente_id      = Column(String(36), ForeignKey("clientes.id"), nullable=False)
     cod_cuenta      = Column(String(30))
     tipo            = Column(String(10))   # DEB / CRE / TRF
     concepto        = Column(String(60))
@@ -99,8 +98,8 @@ class CrMovimiento(Base):
 class Tarjeta(Base):
     __tablename__ = "tarjetas"
 
-    id                 = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    cliente_id         = Column(UUID(as_uuid=True), ForeignKey("clientes.id"), nullable=False)
+    id                 = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    cliente_id         = Column(String(36), ForeignKey("clientes.id"), nullable=False)
     numero_enmascarado = Column(String(25), nullable=False)
     marca              = Column(String(20))
     linea_credito      = Column(Numeric(12, 2))
@@ -114,8 +113,8 @@ class Tarjeta(Base):
 class OperacionCliente(Base):
     __tablename__ = "operaciones_cliente"
 
-    id                 = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    cliente_id         = Column(UUID(as_uuid=True), ForeignKey("clientes.id"), nullable=False)
+    id                 = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    cliente_id         = Column(String(36), ForeignKey("clientes.id"), nullable=False)
     cod_cuenta_origen  = Column(String(30))
     cod_cuenta_destino = Column(String(30))
     tipo               = Column(String(20))  # pago_cuota / transferencia / recarga
@@ -129,13 +128,13 @@ class OperacionCliente(Base):
 class Notificacion(Base):
     __tablename__ = "notificaciones"
 
-    id                = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id                = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     destinatario_tipo = Column(String(10), nullable=False)  # asesor / cliente
-    asesor_id         = Column(UUID(as_uuid=True), ForeignKey("asesores.id"))
-    cliente_id        = Column(UUID(as_uuid=True), ForeignKey("clientes.id"))
+    asesor_id         = Column(String(36), ForeignKey("asesores.id"))
+    cliente_id        = Column(String(36), ForeignKey("clientes.id"))
     titulo            = Column(String(120), nullable=False)
     cuerpo            = Column(Text)
     tipo              = Column(String(40))
-    data_json         = Column(JSONB)
+    data_json         = Column(Text)
     leida             = Column(Boolean, nullable=False, default=False)
     created_at        = Column(DateTime(timezone=True), server_default=func.now())
