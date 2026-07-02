@@ -31,11 +31,12 @@ async def lifespan(app: FastAPI):
     finally:
         session.close()
     if not already_has_data:
-        from app.core.seed import seed_admin, seed_asesor, seed_asesor_fv, seed_clientes_demo
+        from app.core.seed import seed_admin, seed_asesor, seed_asesor_fv, seed_clientes_demo, seed_creditos_demo
         seed_admin()
         seed_asesor()
         seed_asesor_fv()
         seed_clientes_demo()
+        seed_creditos_demo()
     from app.core.seed import seed_cliente_prueba
     seed_cliente_prueba()
     yield

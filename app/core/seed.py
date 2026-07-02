@@ -1,4 +1,5 @@
 import uuid
+import random
 from datetime import datetime, timezone, timedelta
 from app.database.session import SessionLocal
 from app.core.cfg_security import hash_password
@@ -396,6 +397,120 @@ def seed_cliente_prueba():
     finally:
         session.close()
 
+
+def seed_creditos_demo():
+    """Crea solicitudes y créditos demo para que los reportes muestren datos reales."""
+    import logging
+    from app.models.mdl_all import SolicitudCredito, Credito, CronogramaPago
+    from app.services.svc_financiero import calcular_cuota_mensual, generar_cronograma
+    logger = logging.getLogger("core_mobile")
+    session = SessionLocal()
+    try:
+        existing = session.query(SolicitudCredito).first()
+        if existing:
+            return
+        admin = session.query(Asesor).filter(Asesor.codigo_empleado == "000").first()
+        asesor_juan = session.query(Asesor).filter(Asesor.codigo_empleado == "001").first()
+        asesor_brayan = session.query(Asesor).filter(Asesor.codigo_empleado == "0001").first()
+        clientes = session.query(Cliente).all()
+        if not admin or not clientes:
+            logger.warning("No hay asesores o clientes para seed creditos")
+            return
+        ahora = datetime.now(timezone.utc)
+        estados_solicitud = ["enviado", "recibido_comite", "en_evaluacion", "aprobado", "desembolsado", "rechazado"]
+        asesores = [a for a in [asesor_juan, asesor_brayan, admin] if a]
+        for idx, cli in enumerate(clientes[:5]):
+            asesor = asesores[idx % len(asesores)]
+            monto = round(5000 + idx * 3500 + (idx * idx * 200), -2)
+            plazo = 12 + (idx * 6)
+            tea = 0.25 - (idx * 0.01)
+            cuota = calcular_cuota_mensual(monto, plazo, tea)
+            ingreso = round(monto * random.uniform(0.15, 0.35), 0)
+            estado = estados_solicitud[idx % len(estados_solicitud)]
+            score = random.randint(55, 95)
+            sol_id = _nuevo_id()
+            sol = SolicitudCredito(
+                id=sol_id,
+                numero_expediente=f"EXP-DEMO-{str(idx+1).zfill(3)}",
+                asesor_id=asesor.id if estado != "rechazado" else None,
+                cliente_id=cli.id,
+                agencia_id="AG-001",
+                canal="asesor",
+                tipo_negocio=cli.tipo_negocio or "comercio",
+                nombre_negocio=cli.nombre_negocio or f"Negocio {cli.nombres}",
+                ingresos=ingreso,
+                monto=monto,
+                plazo=plazo,
+                moneda="PEN",
+                destino_credito="capital_trabajo",
+                garantia="sin_garantia",
+                tea_referencial=tea,
+                cuota_estimada=cuota,
+                score_usado=score,
+                estado=estado,
+                visita_registrada=1 if estado != "enviado" else 0,
+                preevaluacion_realizada=1 if estado not in ("enviado",) else 0,
+                buro_consultado=1 if estado not in ("enviado",) else 0,
+                documentos_completos=1 if estado not in ("enviado",) else 0,
+                created_at=_hace(30 - idx * 5),
+            )
+            session.add(sol)
+            session.flush()
+            if estado in ("aprobado", "desembolsado"):
+                cred_id = _nuevo_id()
+                cred = Credito(
+                    id=cred_id,
+                    solicitud_id=sol_id,
+                    cliente_id=cli.id,
+                    asesor_id=asesor.id,
+                    cod_cuenta_credito=f"CRED-{str(idx+1).zfill(4)}",
+                    producto="credito_microempresa",
+                    monto=monto,
+                    monto_desembolsado=monto if estado == "desembolsado" else None,
+                    saldo_capital=monto * 0.85,
+                    saldo_total=monto * 1.02,
+                    plazo_meses=plazo,
+                    tasa=tea,
+                    tea=tea,
+                    ingreso_cliente=ingreso,
+                    cuota_estimada=cuota,
+                    ratio_cuota_ingreso=round(cuota / ingreso, 4) if ingreso else 0,
+                    estado="DESEMBOLSADO" if estado == "desembolsado" else "APROBADO",
+                    score=score,
+                    destino="capital_trabajo",
+                    cuotas_total=plazo,
+                    cuotas_pagadas=round(plazo * 0.2) if estado == "desembolsado" else 0,
+                    dias_mora=random.choice([0, 0, 0, 5, 15]),
+                    fecha_creacion=(ahora - timedelta(days=25 - idx * 3)).isoformat(),
+                    fecha_aprobacion=(ahora - timedelta(days=23 - idx * 3)).isoformat(),
+                    fecha_desembolso=(ahora - timedelta(days=20 - idx * 3)).isoformat() if estado == "desembolsado" else None,
+                )
+                session.add(cred)
+                session.flush()
+                sol.credito_id = cred_id
+                cronograma, total_int, total_pagar = generar_cronograma(monto, plazo, tea)
+                for cuota_item in cronograma:
+                    cp = CronogramaPago(
+                        id=_nuevo_id(),
+                        credito_id=cred_id,
+                        nro_cuota=cuota_item["nro_cuota"],
+                        fecha_vencimiento=cuota_item["fecha_vencimiento"],
+                        monto_cuota=cuota_item["monto_cuota"],
+                        monto_capital=cuota_item["monto_capital"],
+                        monto_interes=cuota_item["monto_interes"],
+                        saldo=cuota_item["saldo"],
+                        estado_cuota="pagada" if cuota_item["nro_cuota"] <= cred.cuotas_pagadas else "pendiente",
+                        created_at=_hace(20 - idx * 3),
+                    )
+                    session.add(cp)
+        session.commit()
+        total = session.query(SolicitudCredito).count()
+        logger.info("Seed creditos demo: %s solicitudes y creditos creados", total)
+    except Exception as e:
+        logger.error("Error seed creditos demo: %s", e)
+        session.rollback()
+    finally:
+        session.close()
 
 def seed_clientes_sqlite():
     pass
